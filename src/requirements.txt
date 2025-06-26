@@ -1,0 +1,15 @@
+# === Core backend ===
+fastapi==0.115.13
+uvicorn==0.30.1
+python-dotenv==1.0.1
+pydantic==2.7.4
+
+# === LangChain + Graph Agent ===
+langchain-core
+langgraph==0.4.8
+langchain-google-genai
+
+# === Google API (nếu dùng thêm Sheets, Drive...) ===
+google-api-python-client==2.133.0
+beautifulsoup4
+requests
