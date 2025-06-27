@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # MongoDB service
+  mongodb:
+    image: mongo:7.0
+    container_name: history_ai_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: history_ai
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - history_ai_network
+
+  # FastAPI application
+  app:
+    build: .
+    container_name: history_ai_app
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      - GOOGLE_API_KEY=AIzaSyDXa2DMUauAzfbZjBfYLwaiG5zZ56D8fP4
+      - GOOGLE_CSE_ID=50e9f7965e5d94f92
+      - MONGO_URI=mongodb://admin:password123@mongodb:27017/history_ai?authSource=admin
+    depends_on:
+      - mongodb
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - history_ai_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  mongodb_data:
+
+networks:
+  history_ai_network:
+    driver: bridge 

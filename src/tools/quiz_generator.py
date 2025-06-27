@@ -2,8 +2,11 @@
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import List, Optional
+import asyncio
+from langchain_core.tools import BaseTool
+from langchain_core.messages import HumanMessage, AIMessage
 
 class QuizGeneratorTool:
     name = "quiz_generator"

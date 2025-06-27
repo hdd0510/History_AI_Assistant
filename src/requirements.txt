@@ -5,11 +5,27 @@ python-dotenv==1.0.1
 pydantic==2.7.4
 
 # === LangChain + Graph Agent ===
+langchain
 langchain-core
-langgraph==0.4.8
+langgraph>=0.5.0
 langchain-google-genai
 
-# === Google API (nếu dùng thêm Sheets, Drive...) ===
+# === MongoDB ===
+pymongo
+msgpack
+
+# === Google API ===
 google-api-python-client==2.133.0
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+
+# === Web scraping & HTTP ===
 beautifulsoup4
 requests
+aiohttp
+
+# === Additional dependencies ===
+aiofiles
+python-multipart
+typing-extensions

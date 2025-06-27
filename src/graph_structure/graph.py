@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from typing import TypedDict, List, Dict, Any, Optional
 import asyncio
+import pymongo
 
 from langgraph.graph import StateGraph
 from langgraph.prebuilt import create_react_agent
@@ -10,11 +11,11 @@ from langchain_core.tools import StructuredTool
 from langchain_core.messages import BaseMessage
 from src.tools import WebSearchTool, ImageSearchTool, QuizGeneratorTool, ContentRecommenderTool
 from src.graph_structure.nodes import StartNode, EndNode, ReflectionNode
-from langgraph.checkpoint.mongodb import MongoDBSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 load_dotenv()
 
-MONGO_URI = "mongodb://localhost:27017"
+MONGO_URI = "mongodb://admin:password123@mongodb:27017/history_ai?authSource=admin"
 
 # Define the state schema
 class GraphState(TypedDict):
@@ -87,19 +88,18 @@ Luôn trả lời đầy đủ (không được quá ngắn gọn), chính xác,
 
 async def get_graph(user_id: str):
     """
-    Creates and returns a compiled StateGraph and agent with MongoDB checkpointing.
+    Creates and returns a compiled StateGraph and agent with Memory checkpointing.
     
     Args:
         user_id: User ID for the session
     
     Returns:
-        Tuple of (compiled_graph, agent)
+        Tuple of (agent, saver)
     """
-    # Create MongoDB connection
-    saver_ctx = MongoDBSaver.from_conn_string(MONGO_URI, user_id)
-    saver = saver_ctx.__enter__()
+    # Create Memory saver
+    saver = MemorySaver()
     
-    # Create the agent with the MongoDB checkpointer
+    # Create the agent with the Memory checkpointer
     agent = create_react_agent(
         llm,
         tools=tools_list,
@@ -107,19 +107,20 @@ async def get_graph(user_id: str):
         checkpointer=saver
     )
     # Build the graph
-    return agent, saver_ctx
+    return agent, saver
 
 if __name__ == "__main__":
     # For standalone testing only
     async def test_graph():
-        graph, agent, saver_ctx = await get_graph("test_user")
+        agent, saver = await get_graph("test_user")
         try:
-            result =  agent.invoke(
+            result = agent.invoke(
                 {"messages": [{"role": "user", "content": "Hello, who are you?"}]},
                 {"configurable": {"thread_id": "test_thread"}},
             )
             print(result)
         finally:
-            saver_ctx.__exit__(None, None, None)
+            # No need to close saver context
+            pass
     
     asyncio.run(test_graph())

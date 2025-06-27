@@ -3,8 +3,7 @@ import os
 import threading
 import msgpack
 from datetime import datetime
-
-from langgraph.checkpoint.mongodb import MongoDBSaver
+import pymongo
 
 # For LLM summarization with Gemini
 import asyncio
@@ -16,9 +15,11 @@ class GetProfileUserTool:
         self.mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
         self.user_id = user_id
         
-        # Initialize MongoDB saver
-        self.mongo_saver = MongoDBSaver.from_conn_string(self.mongo_uri, user_id).__enter__()
-        self.user_profile = self.mongo_saver.db["user_profile"]
+        # Initialize MongoDB connection directly
+        client = pymongo.MongoClient(self.mongo_uri)
+        db_name = self.mongo_uri.split("/")[-1].split("?")[0]
+        self.db = client[db_name]
+        self.user_profile = self.db["user_profile"]
         print("Type of self.user_profile:", type(self.user_profile))
 
     async def _summarize_with_gemini(self, messages, existing_profile=None):
@@ -68,7 +69,7 @@ class GetProfileUserTool:
             current_message_count = user.get("processed_message_count", 0) if user else 0
             
             # Tìm các checkpoint có chứa user_id trong messages
-            checkpoints = db["checkpoints"]
+            checkpoints = self.db["checkpoints"]
             cursor = checkpoints.find({})
             messages = []
             
@@ -104,7 +105,7 @@ class GetProfileUserTool:
                 profile_data = await self._summarize_with_gemini(messages, existing_profile)
                 
                 # Update user document
-                users.update_one(
+                self.db.users.update_one(
                     {"_id": self.user_id}, 
                     {
                         "$set": {
