@@ -12,6 +12,7 @@ from langgraph.checkpoint.mongodb import MongoDBSaver
 from digger import CheckpointDigger
 import os
 from src.graph_structure.graph import tools_list, custom_prompt
+import asyncio
 
 # Gán trực tiếp API key tại đây – thay bằng key của bạn
 GOOGLE_API_KEY = "AIzaSyDXa2DMUauAzfbZjBfYLwaiG5zZ56D8fP4"
@@ -139,9 +140,8 @@ async def chat(req: ChatRequest):
         history_str = "\n".join([
             f"User: {q}\nAssistant: {a}" for q, a in qa_pairs
         ])
-        await extract_info(req.user_id,
-                           history_str,  # truyền toàn bộ 5 QA pair vào user_msg
-                           user_profile)  # user_profile là MongoDB collection
+        # Chạy extract_info bất đồng bộ (không chờ kết quả) để không trì hoãn response
+        asyncio.create_task(extract_info(req.user_id, history_str, user_profile))  # user_profile là MongoDB collection
     return ChatResponse(reply=bot_reply)
 
 @app.get("/chat-history/{user_id}/{thread_id}", response_model=List[ChatMessage])
