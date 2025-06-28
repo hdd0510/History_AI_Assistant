@@ -41,12 +41,6 @@ class UserProfile(BaseModel):
     style: str
     learning_goal: str
 
-def get_weather(city: str) -> str:
-    """
-    Trả về chuỗi mô tả thời tiết cho thành phố đã cho.
-    Ví dụ: "It's always sunny in Hanoi!"
-    """
-    return f"It's always sunny in {city}!"
 
 # ==== Lifespan handler to enter & exit context manager ====
 @asynccontextmanager
@@ -73,6 +67,8 @@ async def _get_resources(user_id: str, app: FastAPI):
     if user_id in app.state.user_pool:
         return app.state.user_pool[user_id]
 
+    # Thêm biến đếm lượt hỏi đáp cho mỗi user
+    app.state.user_pool[user_id] = {"turn_count": {}}
 
     saver_ctx = MongoDBSaver.from_conn_string(MONGO_URI, user_id)
     saver     = saver_ctx.__enter__()
@@ -85,13 +81,13 @@ async def _get_resources(user_id: str, app: FastAPI):
     digger = CheckpointDigger(saver.db)
     user_profile = saver.db["user_profile"]
 
-    app.state.user_pool[user_id] = {
+    app.state.user_pool[user_id].update({
         "saver_ctx":    saver_ctx,
         "saver":        saver,
         "agent":        agent,
         "digger":       digger,
         "user_profile": user_profile,
-    }
+    })
     return app.state.user_pool[user_id]
 
 @app.post("/chat", response_model=ChatResponse)
@@ -99,20 +95,15 @@ async def chat(req: ChatRequest):
     res   = await _get_resources(req.user_id, app)
     agent = res["agent"]
     user_profile  = res["user_profile"]
+    print(user_profile)
     if not agent:
         raise HTTPException(503, "Agent chưa sẵn sàng!")
     
     profile_doc = user_profile.find_one({"user_id": req.user_id}) or {}
-    name        = profile_doc.get("name", "unknown")
-    style       = profile_doc.get("style", "unknown")
-    topics      = profile_doc.get("learning_goal", [])
-    topics_str  = ", ".join(topics) if topics else "unknown"
+    profile_description = profile_doc.get("profile_description", "unknown")
 
     prefix = (
-        f"User Profile ➡️ Name: {name}; "
-        f"ChatStyle: {style}; "
-        f"Topics: {topics_str}.\n"
-        "// Đừng hỏi thêm, chỉ dùng cái profile này để tùy biến reply.\n"
+        f"User Profile ➡️ {profile_description}\n"
     )
     print(f"Prefuix: {prefix}")
 
@@ -121,15 +112,36 @@ async def chat(req: ChatRequest):
         {"role": "user",   "content": req.message},
     ]
     resp = agent.invoke(
-        # {"messages": [{"role": "user", "content": full_messages}]},
         {"messages": full_messages},
         {"configurable": {"thread_id": req.thread_id}},
     )
     bot_reply = resp["messages"][-1].content
 
-    await extract_info(req.user_id,
-                       req.message, bot_reply,
-                       user_profile)
+    # Đếm số lượt hỏi đáp và chỉ cập nhật profile mỗi 5 lượt
+    user_turns = res.setdefault("turn_count", {})
+    thread_key = req.thread_id
+    user_turns[thread_key] = user_turns.get(thread_key, 0) + 1
+    print(f"Turn count for user {req.user_id}, thread {thread_key}: {user_turns[thread_key]}")
+    if user_turns[thread_key] % 5 == 0:
+        # Lấy 5 QA pair gần nhất từ lịch sử chat
+        digger = res["digger"]
+        contents = digger(thread_key)
+        # Mỗi QA là 2 turn: user, assistant. Lấy 10 message cuối cùng
+        last_10 = contents[-10:] if contents else []
+        # Gom thành 5 cặp (user, assistant)
+        qa_pairs = []
+        for i in range(0, len(last_10), 2):
+            if i+1 < len(last_10):
+                qa_pairs.append((last_10[i], last_10[i+1]))
+        # Nếu chưa đủ 5 cặp thì lấy hết
+        qa_pairs = qa_pairs[-5:]
+        # Tạo đoạn hội thoại tổng hợp
+        history_str = "\n".join([
+            f"User: {q}\nAssistant: {a}" for q, a in qa_pairs
+        ])
+        await extract_info(req.user_id,
+                           history_str,  # truyền toàn bộ 5 QA pair vào user_msg
+                           user_profile)  # user_profile là MongoDB collection
     return ChatResponse(reply=bot_reply)
 
 @app.get("/chat-history/{user_id}/{thread_id}", response_model=List[ChatMessage])
@@ -151,65 +163,42 @@ async def get_chat_history(user_id: str, thread_id: str):
         ))
     return history
 
-async def extract_info( user_id: str,
-                       user_msg: str, bot_msg: str,
-                       user_profile):    # truyền collection vào đây
-    old = user_profile.find_one({"user_id": user_id}) or {}
-    old_topics = set(old.get("learning_goal", []))
-    old_name   = old.get("name", "")
-    old_style  = old.get("style", "")
-    print(user_msg)
-    print(bot_msg)
+async def extract_info(user_id: str,
+                      history_str: str,
+                      user_profile_collection):    # truyền collection vào đây
+    # Lấy profile cũ từ collection
+    old_profile = user_profile_collection.find_one({"user_id": user_id}) or {}
     print("--------------------")
+    print("Old profile:", old_profile)
     prompt = f"""
-        Bạn là công cụ phân tích đoạn chat. Từ đoạn hội thoại sau giữa người dùng và trợ lý:
+        Bạn là công cụ cập nhật hồ sơ người dùng. Dưới đây là thông tin hồ sơ hiện tại của user, và một đoạn hội thoại mới giữa user và assistant:
         ---
-        User: {user_msg}
-        Assistant: {bot_msg}
+        Hồ sơ hiện tại: {old_profile}
+        Hội thoại: {history_str}
         ---
-        Hãy trả về **chính xác một dòng** theo định dạng:
-        Name: <tên người dùng hoặc 'unknown'>, ChatStyle: <phong cách chat hoặc 'unknown'>, Topics: <danh sách chủ đề hoặc 'unknown'>.
-        Nếu không tìm thấy, ghi 'unknown'.
-        
-        **Chỉ** output đúng 1 dòng, không dấu ngoặc kép, không xuống dòng, không giải thích.
+        Hãy cập nhật hồ sơ người dùng theo thông tin mới. Trong user profile phải có ít nhất các trường: tên, người dùng là ai?, chủ đề người dùng đang quan tâm, mục tiêu học tập.
+        Chỉ giữ nhưng thông tin về giao tiếp và học thuật về người dùng, những thông tin ngoài lề như ngày tháng năm, thời gian, ... thì không cần cập nhật.
+        Output sẽ là 1 profile được cập nhật ví dụ như:
+        "Người dùng tên là Dũng, người dùng là sinh viên, chủ đề người dùng đang quan tâm là lập trình, mục tiêu học tập là trở thành lập trình viên, yêu thích về lịch sử, đang quan tâm về lịch sử năm 1845, mục tiêu ..."
         """.strip()
-
 
     model = init_chat_model(
         "google_genai:gemini-2.0-flash",
         temperature=0
     )
-    
     raw = model.invoke(prompt).content.strip()
-
     print("RAW EXTRACT:", raw)
-    m = re.match(
-        r"Name:\s*(.*?),\s*ChatStyle:\s*(.*?),\s*Topics:\s*(.*)$",
-        raw
-    )
-    print(f"extract_info: {m}")
 
-    if not m:
-        print("Không khớp định dạng:", raw)
-        return
+    # Cố gắng lấy đoạn mô tả profile trả về từ LLM (string)
+    profile_description = raw.strip()
 
-    name, style, topics_str = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
-    new_topics = {t.strip() for t in topics_str.split(",")
-                  if t.strip().lower() != "unknown"}
-    topics_to_add = new_topics - old_topics
-    if name == old_name and style == old_style and not topics_to_add:
-        print("Không có thay đổi, skip upsert")
-        return
-
-    merged_topics = old_topics.union(new_topics)
-    user_profile.update_one(
+    # Cập nhật vào MongoDB collection
+    user_profile_collection.update_one(
         {"user_id": user_id},
         {"$set": {
-            "user_id":       user_id,
-            "name":          name if name.lower() != "unknown" else old_name,
-            "style":         style if style.lower() != "unknown" else old_style,
-            "learning_goal": list(merged_topics),
+            "user_id": user_id,
+            "profile_description": profile_description,
         }},
         upsert=True
     )
-    print(f"Đã upsert: name={name}, style={style}, thêm topics={topics_to_add}")
+    print(f"Đã upsert profile cho user_id={user_id}: profile_description={profile_description}")

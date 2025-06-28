@@ -59,7 +59,7 @@ class QuizGeneratorTool:
             | JsonOutputParser() # JsonOutputParser sẽ tự động xử lý Optional fields
         )
 
-    async def __call__(self, topic: str, num_q: int = 3, question_type: str = "multiple_choice"):
+    def __call__(self, topic: str, num_q: int = 3, question_type: str = "multiple_choice"):
         """
         Generates quiz questions.
         :param topic: The historical topic for the quiz.
@@ -67,7 +67,8 @@ class QuizGeneratorTool:
         :param question_type: 'multiple_choice' for trắc nghiệm or 'open_ended' for câu hỏi mở.
         """
         try:
-            result = await self.quiz_chain.ainvoke({"topic": topic, "num_q": num_q, "type": question_type})
+            # Sử dụng phương thức invoke thay vì ainvoke
+            result = self.quiz_chain.invoke({"topic": topic, "num_q": num_q, "type": question_type})
             print("đang dùng hàm quiz_generator")
             return {"quiz": result}
         except Exception as e:

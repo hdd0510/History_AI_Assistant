@@ -96,13 +96,22 @@ class WebSearchTool:
             self.logger.error(f"Lỗi trong quá trình tìm kiếm: {e}")
             return f"[Lỗi khi thực hiện tìm kiếm: {str(e)}]"
 
-    async def __call__(self, query: str) -> Dict[str, str]:
+    async def _async_call(self, query: str) -> Dict[str, str]:
         """
-        Hàm được gọi bởi agent, trả về dict {"result": "..."}
+        Phiên bản bất đồng bộ của hàm call
         """
         self.logger.info(f"Tìm kiếm web với query: {query}")
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, self._search_sync, query)
+        return {"result": result}
+
+    def __call__(self, query: str) -> Dict[str, str]:
+        """
+        Hàm được gọi bởi agent, trả về dict {"result": "..."}
+        Phiên bản đồng bộ để tương thích với agent không hỗ trợ async
+        """
+        self.logger.info(f"Tìm kiếm web với query: {query}")
+        result = self._search_sync(query)
         return {"result": result}
 
 
@@ -119,7 +128,23 @@ class ImageSearchTool(BaseSearchTool):
     def __init__(self):
         super().__init__(search_type='image', num_results=3)
 
-    async def __call__(self, query: str):
+    async def _async_call(self, query: str):
+        try:
+            response = self._search(query)
+            items = response.get("items", [])
+
+            if not items:
+                return {"image_urls": [], "error": f"Không tìm thấy hình ảnh nào cho: {query}"}
+
+            return {"image_urls": [item.get("link") for item in items if "link" in item]}
+        except Exception as e:
+            self.logger.error(f"Lỗi tìm kiếm hình ảnh cho '{query}': {e}")
+            return {"image_urls": [], "error": f"Lỗi khi tìm kiếm hình ảnh: {str(e)}"}
+            
+    def __call__(self, query: str):
+        """
+        Phiên bản đồng bộ để tương thích với agent không hỗ trợ async
+        """
         try:
             response = self._search(query)
             items = response.get("items", [])

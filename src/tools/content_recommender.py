@@ -51,7 +51,7 @@ class ContentRecommenderTool:
             | JsonOutputParser()
         )
 
-    async def __call__(self, topic: str, context: str = "", num_recommendations: int = 3) -> Dict:
+    def __call__(self, topic: str, context: str = "", num_recommendations: int = 3) -> Dict:
         """
         Generates content recommendations based on a topic and context.
         
@@ -61,7 +61,7 @@ class ContentRecommenderTool:
         :return: Dictionary with recommendations in JSON format
         """
         try:
-            result = await self.recommendation_chain.ainvoke({
+            result = self.recommendation_chain.invoke({
                 "topic": topic, 
                 "context": context, 
                 "num_recommendations": num_recommendations

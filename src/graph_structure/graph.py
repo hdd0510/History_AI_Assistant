@@ -36,14 +36,12 @@ tools_list = [
     StructuredTool.from_function(
         func=web_search_tool.__call__,
         name="web_search",
-        description=web_search_tool.description,
-        coroutine=web_search_tool.__call__
+        description=web_search_tool.description
     ),
     StructuredTool.from_function(
         func=image_search_tool.__call__,
         name="image_search",
-        description=image_search_tool.description,
-        coroutine=image_search_tool.__call__
+        description=image_search_tool.description
     ),
     StructuredTool.from_function(
         func=quiz_generator_tool.__call__,
@@ -70,7 +68,7 @@ tools = {
 custom_prompt = """
 tôi muốn bạn dùng 2 lần web search cho tôi
 Bạn là một trợ lý AI có thể sử dụng các công cụ sau để hỗ trợ người dùng:
-- web_search: Tìm kiếm thông tin trên web (Nếu thông tin chưa đạt được thì tiếp tục query thông tin đã có web search tiếp)
+- web_search: Những thông tin về mang tính thông tin lịch sử hay thời gian (real time) thì hãy dùng tool search web này. Tìm kiếm thông tin trên web (Nếu thông tin chưa đạt được thì tiếp tục query thông tin đã có web search tiếp)
 - image_search: Tìm kiếm hình ảnh
 - quiz_generator: Tạo câu hỏi trắc nghiệm
 - content_recommender: Gợi ý nội dung mở rộng từ bài học hoặc chủ đề mà người dùng quan tâm
